@@ -1,0 +1,22 @@
+{
+  "entities": {
+    "audio-recording-verification": {
+      "properties": {
+        "id": "string",
+        "fileName": "string",
+        "audioUrl": "string",
+        "audioBase64": "string",
+        "laoTranscript": "string",
+        "englishTranscript": "string",
+        "summary": "string",
+        "speakersCount": "number",
+        "tone": "string",
+        "callQuality": "string",
+        "keywords": "array",
+        "status": "string",
+        "createdAt": "string",
+        "duration": "number"
+      }
+    }
+  }
+}

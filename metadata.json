@@ -1,0 +1,6 @@
+{
+  "name": "ລະບົບກວດສອບ ຄຣິບສຽງການສົນທະນາ",
+  "description": "ລະບົບກວດສອບ ແລະ ແປງສຽງການສົນທະນາເປັນຂໍ້ຄວາມພາສາລາວ ແລະ ພາສາອັງກິດດ້ວຍ AI ສໍາລັບ TPLUS Call Center 123",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
