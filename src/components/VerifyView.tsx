@@ -6,9 +6,10 @@ import AudioPlayer from "./AudioPlayer";
 interface VerifyViewProps {
   onAddRecord: (record: AudioRecord) => void;
   onSelectRecord: (record: AudioRecord) => void;
+  googleAccessToken?: string | null;
 }
 
-export default function VerifyView({ onAddRecord, onSelectRecord }: VerifyViewProps) {
+export default function VerifyView({ onAddRecord, onSelectRecord, googleAccessToken }: VerifyViewProps) {
   const [file, setFile] = useState<File | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -77,11 +78,16 @@ export default function VerifyView({ onAddRecord, onSelectRecord }: VerifyViewPr
 
       // 2. Contact Backend Transcription endpoint
       setTranscribeStep("ກຳລັງສົ່ງສຽງໃຫ້ Gemini AI ແປງເປັນຂໍ້ຄວາມພາສາລາວ ແລະ ອັງກິດ...");
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+      };
+      if (googleAccessToken) {
+        headers["Authorization"] = `Bearer ${googleAccessToken}`;
+      }
+      
       const response = await fetch("/api/transcribe", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify({
           audioBase64: base64,
           fileName: file.name,
@@ -95,7 +101,10 @@ export default function VerifyView({ onAddRecord, onSelectRecord }: VerifyViewPr
         throw new Error(data.error || "ການແປງສຽງຜິດພາດ. ກະລຸນາກວດສອບ API key.");
       }
 
-      setTranscribeStep("ບັນທຶກລົງຖານຂໍ້ມູນ Firebase (audio-recording-verification) ສໍາເລັດແລ້ວ!");
+      const savedLocation = googleAccessToken 
+        ? "Google Sheet (1xu8_nN4HTQ223lktc4hpgMPKKfL7PrLC-Mnr_7CuFwo)" 
+        : "Firebase (audio-recording-verification)";
+      setTranscribeStep(`ບັນທຶກລົງຖານຂໍ້ມູນ ${savedLocation} ສໍາເລັດແລ້ວ!`);
       setTimeout(() => {
         setResult(data.record);
         onAddRecord(data.record);
@@ -308,7 +317,15 @@ export default function VerifyView({ onAddRecord, onSelectRecord }: VerifyViewPr
               <div>
                 <h4 className="text-sm font-bold text-white">ແປງສຽງການສົນທະນາ ແລະ ບັນທຶກສຳເລັດ!</h4>
                 <p className="text-xs text-gray-400">
-                  ຂໍ້ມູນໄດ້ຖືກເກັບໄວ້ໃນ Firebase collection <span className="font-mono text-red-400">audio-recording-verification</span> ຮຽບຮ້ອຍແລ້ວ.
+                  {googleAccessToken ? (
+                    <>
+                      ຂໍ້ມູນໄດ້ຖືກບັນທຶກລົງໃນ Google Sheet ID: <span className="font-mono text-red-500 font-bold select-all">1xu8_nN4HTQ223lktc4hpgMPKKfL7PrLC-Mnr_7CuFwo</span> ຮຽບຮ້ອຍແລ້ວ.
+                    </>
+                  ) : (
+                    <>
+                      ຂໍ້ມູນໄດ້ຖືກເກັບໄວ້ໃນ Firebase collection <span className="font-mono text-red-400">audio-recording-verification</span> ຮຽບຮ້ອຍແລ້ວ.
+                    </>
+                  )}
                 </p>
               </div>
               <button

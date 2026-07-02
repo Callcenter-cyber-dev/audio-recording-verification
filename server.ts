@@ -189,9 +189,152 @@ app.post("/api/auth/login", (req, res) => {
   }
 });
 
-// API: Get all records
-app.get("/api/records", (req, res) => {
+// Helper: Fetch records from Google Sheets
+async function fetchRecordsFromGoogleSheet(token: string): Promise<any[]> {
+  const spreadsheetId = "1xu8_nN4HTQ223lktc4hpgMPKKfL7PrLC-Mnr_7CuFwo";
+  const range = "Sheet1!A1:N1000";
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`, {
+    headers: { Authorization: token },
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error("Failed to fetch Google Sheet rows:", errText);
+    throw new Error("Failed to fetch Google Sheet rows: " + errText);
+  }
+  const data = await res.json();
+  const rows = data.values;
+  if (!rows || rows.length <= 1) {
+    return [];
+  }
+  
+  const records: any[] = [];
+  
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.length === 0) continue;
+    
+    records.push({
+      id: row[0] || "",
+      fileName: row[1] || "",
+      audioBase64: row[2] || "",
+      laoTranscript: row[3] || "",
+      englishTranscript: row[4] || "",
+      summary: row[5] || "",
+      speakersCount: parseInt(row[6]) || 2,
+      tone: row[7] || "",
+      callQuality: row[8] || "",
+      keywords: row[9] ? row[9].split(",").map((k: string) => k.trim()) : [],
+      status: row[10] || "verified",
+      createdAt: row[11] || "",
+      duration: parseInt(row[12]) || 30,
+      isFallback: row[13] === "true",
+    });
+  }
+  
+  // Return reversed to keep newest first
+  return records.reverse();
+}
+
+// Helper: Append a record to Google Sheets
+async function appendRecordToGoogleSheet(token: string, record: any) {
+  const spreadsheetId = "1xu8_nN4HTQ223lktc4hpgMPKKfL7PrLC-Mnr_7CuFwo";
+  const values = [
+    [
+      record.id,
+      record.fileName,
+      record.audioBase64 || "",
+      record.laoTranscript,
+      record.englishTranscript,
+      record.summary,
+      record.speakersCount,
+      record.tone,
+      record.callQuality,
+      Array.isArray(record.keywords) ? record.keywords.join(", ") : record.keywords,
+      record.status,
+      record.createdAt,
+      record.duration,
+      record.isFallback ? "true" : "false"
+    ]
+  ];
+  
   try {
+    // Check if sheet range exists or needs headers
+    const checkRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1:A1`, {
+      headers: { Authorization: token },
+    });
+    if (checkRes.ok) {
+      const checkData = await checkRes.json();
+      if (!checkData.values || checkData.values.length === 0) {
+        const headers = [
+          "ID", "File Name", "Audio Base64", "Lao Transcript", "English Transcript", 
+          "Summary", "Speakers Count", "Tone", "Call Quality", "Keywords", 
+          "Status", "Created At", "Duration", "Is Fallback"
+        ];
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1:N1?valueInputOption=USER_ENTERED`, {
+          method: "PUT",
+          headers: { 
+            "Content-Type": "application/json",
+            Authorization: token 
+          },
+          body: JSON.stringify({ values: [headers] })
+        });
+      }
+    }
+  } catch (e) {
+    console.warn("Failed checking/writing headers:", e);
+  }
+
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A:N:append?valueInputOption=USER_ENTERED`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: token
+    },
+    body: JSON.stringify({ values })
+  });
+  
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error("Failed to append row to Google Sheet:", errText);
+    throw new Error("Failed to append row to Google Sheet: " + errText);
+  }
+}
+
+// Helper: Delete record from Google Sheets (clearing row contents matching ID)
+async function deleteRecordFromGoogleSheet(token: string, id: string) {
+  const spreadsheetId = "1xu8_nN4HTQ223lktc4hpgMPKKfL7PrLC-Mnr_7CuFwo";
+  const checkRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1:N1000`, {
+    headers: { Authorization: token },
+  });
+  if (checkRes.ok) {
+    const data = await checkRes.json();
+    const rows = data.values;
+    if (rows) {
+      const rowIndex = rows.findIndex((row: any[]) => row[0] === id);
+      if (rowIndex !== -1) {
+        // We can clear this specific row range e.g. Sheet1!A{index}:N{index}
+        const rangeToClear = `Sheet1!A${rowIndex + 1}:N${rowIndex + 1}`;
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${rangeToClear}:clear`, {
+          method: "POST",
+          headers: { Authorization: token }
+        });
+      }
+    }
+  }
+}
+
+// API: Get all records
+app.get("/api/records", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.substring(7);
+      if (token && token !== "null" && token !== "undefined") {
+        const sheetRecords = await fetchRecordsFromGoogleSheet(authHeader);
+        return res.json({ success: true, records: sheetRecords });
+      }
+    }
+    // Fallback to local in-memory records
     res.json({ success: true, records: verificationRecords });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -199,13 +342,22 @@ app.get("/api/records", (req, res) => {
 });
 
 // API: Save record manually
-app.post("/api/records", (req, res) => {
+app.post("/api/records", async (req, res) => {
   try {
+    const authHeader = req.headers.authorization;
     const newRecord = {
       id: "rec-" + Date.now(),
       createdAt: new Date().toISOString(),
       ...req.body
     };
+    
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.substring(7);
+      if (token && token !== "null" && token !== "undefined") {
+        await appendRecordToGoogleSheet(authHeader, newRecord);
+      }
+    }
+    
     verificationRecords.unshift(newRecord);
     res.json({ success: true, record: newRecord });
   } catch (error: any) {
@@ -214,9 +366,18 @@ app.post("/api/records", (req, res) => {
 });
 
 // API: Delete a record
-app.delete("/api/records/:id", (req, res) => {
+app.delete("/api/records/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const authHeader = req.headers.authorization;
+    
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.substring(7);
+      if (token && token !== "null" && token !== "undefined") {
+        await deleteRecordFromGoogleSheet(authHeader, id);
+      }
+    }
+    
     verificationRecords = verificationRecords.filter(r => r.id !== id);
     res.json({ success: true, message: "Record deleted successfully" });
   } catch (error: any) {
@@ -433,6 +594,21 @@ You MUST output your response in strict JSON format. Use the exact schema define
     duration: duration || Math.floor(Math.random() * 45) + 15, // random duration between 15-60s if not provided
     isFallback: isFallback,
   };
+
+  // Save into Google Sheet if google access token is present
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    if (token && token !== "null" && token !== "undefined") {
+      try {
+        await appendRecordToGoogleSheet(authHeader, newRecord);
+      } catch (err: any) {
+        console.error("Failed to append transcribed record to Google Sheet:", err.message);
+        // We do not fail the request completely if Google Sheet append fails, but we can log it.
+        // It's safer to return the record so the user at least sees it, or we can optionally let them know.
+      }
+    }
+  }
 
   // Save into list
   verificationRecords.unshift(newRecord);

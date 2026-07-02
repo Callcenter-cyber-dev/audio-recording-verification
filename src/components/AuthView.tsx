@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { User } from "../types";
 import { ShieldCheck, UserCheck, Key, Lock, PhoneCall, Sparkles, AlertCircle, LogIn, ArrowRight } from "lucide-react";
+import { googleSignIn } from "../utils/auth";
 
 interface AuthViewProps {
-  onLoginSuccess: (user: User) => void;
+  onLoginSuccess: (user: User, googleToken?: string) => void;
 }
 
 export default function AuthView({ onLoginSuccess }: AuthViewProps) {
@@ -28,6 +29,29 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
     setUsername("auditor123");
     setPassword("tplus123");
     setError(null);
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const result = await googleSignIn();
+      if (result) {
+        const { user, accessToken } = result;
+        onLoginSuccess({
+          id: user.uid,
+          username: user.email || "google-user",
+          displayName: user.displayName || "Google User",
+          role: "Google Sheet Auditor"
+        }, accessToken);
+      }
+    } catch (err: any) {
+      console.error("Google sign in failed:", err);
+      setError("ເຂົ້າສູ່ລະບົບດ້ວຍ Google ບໍ່ສຳເລັດ: " + (err.message || "ເກີດຂໍ້ຜິດພາດໃນການຕິດຕໍ່ Google. ກະລຸນາລອງໃໝ່."));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -305,6 +329,35 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
               </>
             )}
           </button>
+
+          {/* Divider */}
+          {isLogin && (
+            <>
+              <div className="relative my-4 flex items-center justify-center">
+                <div className="absolute inset-x-0 h-[1px] bg-zinc-900" />
+                <span className="relative bg-[#0d0d11] px-3 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                  ຫຼື ເຂົ້າສູ່ລະບົບດ້ວຍ
+                </span>
+              </div>
+
+              {/* Google Sign In Button */}
+              <button
+                id="auth-btn-google"
+                type="button"
+                disabled={isLoading}
+                onClick={handleGoogleSignIn}
+                className="w-full bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-white py-3 rounded-xl text-xs font-bold shadow-md flex items-center justify-center gap-2.5 transition active:scale-[0.98] cursor-pointer disabled:opacity-50"
+              >
+                <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-4.5 h-4.5 shrink-0">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                </svg>
+                <span>ເຂົ້າສູ່ລະບົບດ້ວຍ Google</span>
+              </button>
+            </>
+          )}
         </form>
 
         {/* Quick Credentials Helpers for instant review & ease of use */}

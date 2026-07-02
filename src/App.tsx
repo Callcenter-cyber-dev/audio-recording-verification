@@ -7,6 +7,7 @@ import SettingsView from "./components/SettingsView";
 import AuthView from "./components/AuthView";
 import { SidebarTab, AudioRecord, User } from "./types";
 import { PhoneCall, AlertCircle, RefreshCw, Layers } from "lucide-react";
+import { initAuth, logoutGoogle } from "./utils/auth";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<SidebarTab>("dashboard");
@@ -18,13 +19,19 @@ export default function App() {
   // Auth state
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
 
   // Fetch records from backend Express API on mount or refresh
-  const fetchRecords = async () => {
+  const fetchRecords = async (token?: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/records");
+      const activeToken = token || googleAccessToken;
+      const headers: HeadersInit = {};
+      if (activeToken) {
+        headers["Authorization"] = `Bearer ${activeToken}`;
+      }
+      const response = await fetch("/api/records", { headers });
       const data = await response.json();
       if (data.success) {
         setRecords(data.records);
@@ -86,26 +93,65 @@ export default function App() {
   };
 
   useEffect(() => {
+    // 1. Load local auth session if any
     const stored = localStorage.getItem("tplus-auditor-user");
+    let initialUser = null;
     if (stored) {
       try {
-        setCurrentUser(JSON.parse(stored));
+        initialUser = JSON.parse(stored);
+        setCurrentUser(initialUser);
       } catch (e) {
         console.warn("Could not load stored user session:", e);
       }
     }
     setIsCheckingAuth(false);
-    fetchRecords();
+
+    // 2. Try to restore Google auth session
+    const unsubscribe = initAuth(
+      (googleUser, token) => {
+        setGoogleAccessToken(token);
+        if (!initialUser) {
+          const syncedUser = {
+            id: googleUser.uid,
+            username: googleUser.email || "google-user",
+            displayName: googleUser.displayName || "Google User",
+            role: "Google Sheet Auditor"
+          };
+          setCurrentUser(syncedUser);
+          localStorage.setItem("tplus-auditor-user", JSON.stringify(syncedUser));
+        }
+        fetchRecords(token);
+      },
+      () => {
+        // Fallback or load regular records without Google token
+        fetchRecords();
+      }
+    );
+
+    return () => unsubscribe();
   }, []);
 
-  const handleLoginSuccess = (user: User) => {
+  const handleLoginSuccess = (user: User, googleToken?: string) => {
     setCurrentUser(user);
     localStorage.setItem("tplus-auditor-user", JSON.stringify(user));
+    if (googleToken) {
+      setGoogleAccessToken(googleToken);
+      fetchRecords(googleToken);
+    } else {
+      fetchRecords();
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setCurrentUser(null);
+    setGoogleAccessToken(null);
     localStorage.removeItem("tplus-auditor-user");
+    try {
+      await logoutGoogle();
+    } catch (e) {
+      console.warn("Error during Google logout:", e);
+    }
+    fetchRecords();
   };
 
   // Sync added records locally
@@ -229,6 +275,7 @@ export default function App() {
             <VerifyView 
               onAddRecord={handleAddRecord} 
               onSelectRecord={setSelectedRecord}
+              googleAccessToken={googleAccessToken}
             />
           )}
 
