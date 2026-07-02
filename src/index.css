@@ -3,7 +3,7 @@
 
 @theme {
   --font-sans: "Noto Sans Lao", "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "JetBrains Mono", "Noto Sans Lao", ui-monospace, monospace;
   
   /* Red premium design custom animation colors and utilities */
   --color-brand-red-50: #fef2f2;
@@ -16,8 +16,17 @@
   --color-brand-dark: #0f0f12;
 }
 
+/* Base font-family declarations for all HTML tags to ensure Noto Sans Lao is universally used for Lao text */
+html, body, button, input, select, textarea, span, p, h1, h2, h3, h4, h5, h6, table, thead, tbody, th, td, div, section, aside, nav, footer {
+  font-family: "Noto Sans Lao", "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* Fallback for monospace font classes so that Lao characters beautifully fall back to Noto Sans Lao */
+.font-mono, code, pre, kbd, samp {
+  font-family: "JetBrains Mono", "Noto Sans Lao", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+}
+
 body {
-  font-family: var(--font-sans);
   background-color: #0c0c0e;
   color: #f3f4f6;
   overflow-x: hidden;
