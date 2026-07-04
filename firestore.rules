@@ -4,5 +4,8 @@ service cloud.firestore {
     match /audio-recording-verification/{document} {
       allow read, write: if true;
     }
+    match /audio-recording-verification-meetings/{document} {
+      allow read, write: if true;
+    }
   }
 }
