@@ -2,6 +2,8 @@ import React, { useState, useRef } from "react";
 import { Upload, FileAudio, Play, CheckCircle, RefreshCw, AlertCircle, Headphones, Sparkles, Languages } from "lucide-react";
 import { AudioRecord } from "../types";
 import AudioPlayer from "./AudioPlayer";
+import { db } from "../utils/auth";
+import { doc, setDoc } from "firebase/firestore";
 
 interface VerifyViewProps {
   onAddRecord: (record: AudioRecord) => void;
@@ -36,12 +38,13 @@ export default function VerifyView({ onAddRecord, onSelectRecord, googleAccessTo
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const droppedFile = e.dataTransfer.files[0];
-      if (droppedFile.type.startsWith("audio/") || droppedFile.name.endsWith(".mp3") || droppedFile.name.endsWith(".wav") || droppedFile.name.endsWith(".m4a")) {
+      const lowerName = droppedFile.name.toLowerCase();
+      if (droppedFile.type.startsWith("audio/") || lowerName.endsWith(".mp3") || lowerName.endsWith(".wav") || lowerName.endsWith(".m4a") || lowerName.endsWith(".ogg")) {
         setFile(droppedFile);
         setError(null);
         setResult(null);
       } else {
-        setError("ຂໍອະໄພ, ຮອງຮັບສະເພາະໄຟລ໌ສຽງ (MP3, WAV, M4A) ເທົ່ານັ້ນ.");
+        setError("ຂໍອະໄພ, ຮອງຮັບສະເພາະໄຟລ໌ສຽງ (MP3, WAV, M4A, OGG) ເທົ່ານັ້ນ.");
       }
     }
   };
@@ -104,6 +107,16 @@ export default function VerifyView({ onAddRecord, onSelectRecord, googleAccessTo
       const savedLocation = googleAccessToken 
         ? "Google Sheet (1xu8_nN4HTQ223lktc4hpgMPKKfL7PrLC-Mnr_7CuFwo)" 
         : "Firebase (audio-recording-verification)";
+
+      // Always save to Firestore if not using Google Sheets, or as a secondary cloud backup
+      if (!googleAccessToken) {
+        try {
+          await setDoc(doc(db, "audio-recording-verification", data.record.id), data.record);
+        } catch (fbErr: any) {
+          console.warn("Failed to write record to Firestore collection 'audio-recording-verification':", fbErr.message);
+        }
+      }
+
       setTranscribeStep(`ບັນທຶກລົງຖານຂໍ້ມູນ ${savedLocation} ສໍາເລັດແລ້ວ!`);
       setTimeout(() => {
         setResult(data.record);
@@ -182,7 +195,7 @@ export default function VerifyView({ onAddRecord, onSelectRecord, googleAccessTo
           <input
             ref={fileInputRef}
             type="file"
-            accept="audio/*,.mp3,.wav,.m4a"
+            accept="audio/*,.mp3,.wav,.m4a,.ogg"
             onChange={handleFileChange}
             className="hidden"
           />
@@ -194,7 +207,7 @@ export default function VerifyView({ onAddRecord, onSelectRecord, googleAccessTo
               </div>
               <div>
                 <p className="text-sm font-semibold text-white">ລາກໄຟລ໌ສຽງມາປະໄວ້ທີ່ນີ້ ຫຼື ກົດເພື່ອເລືອກໄຟລ໌</p>
-                <p className="text-xs text-gray-500 mt-1">ຮອງຮັບໄຟລ໌ MP3, WAV, M4A ສູງສຸດ 50MB</p>
+                <p className="text-xs text-gray-500 mt-1">ຮອງຮັບໄຟລ໌ MP3, WAV, M4A, OGG ສູງສຸດ 50MB</p>
               </div>
             </div>
           ) : (

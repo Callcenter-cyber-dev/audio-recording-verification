@@ -3,11 +3,13 @@ import Sidebar from "./components/Sidebar";
 import DashboardView from "./components/DashboardView";
 import RecordsView from "./components/RecordsView";
 import VerifyView from "./components/VerifyView";
+import MeetingView from "./components/MeetingView";
 import SettingsView from "./components/SettingsView";
 import AuthView from "./components/AuthView";
 import { SidebarTab, AudioRecord, User } from "./types";
 import { PhoneCall, AlertCircle, RefreshCw, Layers } from "lucide-react";
-import { initAuth, logoutGoogle } from "./utils/auth";
+import { initAuth, logoutGoogle, db } from "./utils/auth";
+import { collection, getDocs, query, orderBy, doc, deleteDoc } from "firebase/firestore";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<SidebarTab>("dashboard");
@@ -27,6 +29,27 @@ export default function App() {
     setError(null);
     try {
       const activeToken = token || googleAccessToken;
+
+      // If no Google Sheet token is present, let's load from Cloud Firestore "audio-recording-verification"
+      if (!activeToken) {
+        try {
+          const q = query(collection(db, "audio-recording-verification"), orderBy("createdAt", "desc"));
+          const querySnapshot = await getDocs(q);
+          const fbRecords: AudioRecord[] = [];
+          querySnapshot.forEach((docSnap) => {
+            fbRecords.push({ id: docSnap.id, ...docSnap.data() } as AudioRecord);
+          });
+          
+          if (fbRecords.length > 0) {
+            setRecords(fbRecords);
+            setIsLoading(false);
+            return;
+          }
+        } catch (fbErr: any) {
+          console.warn("Failed to load from Cloud Firestore, falling back to local memory:", fbErr.message);
+        }
+      }
+
       const headers: HeadersInit = {};
       if (activeToken) {
         headers["Authorization"] = `Bearer ${activeToken}`;
@@ -164,6 +187,15 @@ export default function App() {
   // Delete handler
   const handleDeleteRecord = async (id: string) => {
     try {
+      // If no Google Sheet token is present, let's delete from Cloud Firestore "audio-recording-verification"
+      if (!googleAccessToken) {
+        try {
+          await deleteDoc(doc(db, "audio-recording-verification", id));
+        } catch (fbErr: any) {
+          console.warn("Failed to delete record from Firestore:", fbErr.message);
+        }
+      }
+
       const response = await fetch(`/api/records/${id}`, {
         method: "DELETE"
       });
@@ -275,6 +307,12 @@ export default function App() {
             <VerifyView 
               onAddRecord={handleAddRecord} 
               onSelectRecord={setSelectedRecord}
+              googleAccessToken={googleAccessToken}
+            />
+          )}
+
+          {activeTab === "meeting" && (
+            <MeetingView 
               googleAccessToken={googleAccessToken}
             />
           )}

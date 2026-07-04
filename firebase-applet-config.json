@@ -3,6 +3,7 @@
   "appId": "1:563822713966:web:db4119351c3b2a312f5a7f",
   "apiKey": "AIzaSyBevAQ5C9n_X3vTA_c2swrV92VkgJdh0-E",
   "authDomain": "perceptive-matrix-tfs6l.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-b718cb9e-96f9-4b61-90cd-f0b50408f340",
   "storageBucket": "perceptive-matrix-tfs6l.firebasestorage.app",
   "messagingSenderId": "563822713966",
   "measurementId": ""

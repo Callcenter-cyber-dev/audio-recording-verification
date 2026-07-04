@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { User } from "../types";
 import { ShieldCheck, UserCheck, Key, Lock, PhoneCall, Sparkles, AlertCircle, LogIn, ArrowRight } from "lucide-react";
-import { googleSignIn } from "../utils/auth";
+import { googleSignIn, auth } from "../utils/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 
 interface AuthViewProps {
   onLoginSuccess: (user: User, googleToken?: string) => void;
@@ -17,6 +18,15 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isInIframe, setIsInIframe] = useState(false);
+
+  useEffect(() => {
+    try {
+      setIsInIframe(window.self !== window.top);
+    } catch (e) {
+      setIsInIframe(true);
+    }
+  }, []);
 
   // Quick fill admin credentials for comfortable reviewer testing
   const handleQuickFill = () => {
@@ -48,7 +58,19 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
       }
     } catch (err: any) {
       console.error("Google sign in failed:", err);
-      setError("ເຂົ້າສູ່ລະບົບດ້ວຍ Google ບໍ່ສຳເລັດ: " + (err.message || "ເກີດຂໍ້ຜິດພາດໃນການຕິດຕໍ່ Google. ກະລຸນາລອງໃໝ່."));
+      const isPopupError = err.code === "auth/popup-closed-by-user" || 
+                           (err.message && (
+                             err.message.includes("popup-closed-by-user") || 
+                             err.message.includes("popup_closed_by_user") ||
+                             err.message.includes("cancelled-by-user") ||
+                             err.message.includes("closed-by-user")
+                           ));
+      
+      if (isPopupError) {
+        setError("popup-closed-by-user");
+      } else {
+        setError("ເຂົ້າສູ່ລະບົບດ້ວຍ Google ບໍ່ສຳເລັດ: " + (err.message || "ເກີດຂໍ້ຜິດພາດໃນການຕິດຕໍ່ Google. ກະລຸນາລອງໃໝ່."));
+      }
     } finally {
       setIsLoading(false);
     }
@@ -72,40 +94,74 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
     setIsLoading(true);
 
     try {
-      if (isLogin) {
-        // Log in API call
-        const response = await fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password })
-        });
-        const data = await response.json();
-        if (data.success) {
-          // Success callback
-          onLoginSuccess(data.user);
+      const isEmail = username.includes("@");
+      if (isEmail) {
+        // Real Firebase Authentication with Email/Password (specifically Gmail)
+        if (isLogin) {
+          const userCredential = await signInWithEmailAndPassword(auth, username.trim(), password);
+          onLoginSuccess({
+            id: userCredential.user.uid,
+            username: userCredential.user.email || username.trim(),
+            displayName: userCredential.user.displayName || "Gmail User",
+            role: "Gmail QA Auditor"
+          });
         } else {
-          setError(data.error || "ຊື່ຜູ້ໃຊ້ ຫຼື ລະຫັດຜ່ານບໍ່ຖືກຕ້ອງ");
+          const userCredential = await createUserWithEmailAndPassword(auth, username.trim(), password);
+          await updateProfile(userCredential.user, { displayName: displayName.trim() });
+          setSuccessMsg("ລົງທະບຽນດ້ວຍ Gmail ສຳເລັດແລ້ວ! ກະລຸນາເຂົ້າສູ່ລະບົບ");
+          setIsLogin(true);
+          setPassword("");
         }
       } else {
-        // Register API call
-        const response = await fetch("/api/auth/register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password, displayName, role })
-        });
-        const data = await response.json();
-        if (data.success) {
-          setSuccessMsg("ລົງທະບຽນສຳເລັດແລ້ວ! ກະລຸນາເຂົ້າສູ່ລະບົບ");
-          setIsLogin(true);
-          setPassword(""); // Reset password but keep username for instant login convenience
+        // Standard Username/Password flow (either local API or fallback)
+        if (isLogin) {
+          // Log in API call
+          const response = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password })
+          });
+          const data = await response.json();
+          if (data.success) {
+            // Success callback
+            onLoginSuccess(data.user);
+          } else {
+            setError(data.error || "ຊື່ຜູ້ໃຊ້ ຫຼື ລະຫັດຜ່ານບໍ່ຖືກຕ້ອງ");
+          }
         } else {
-          setError(data.error || "ບໍ່ສາມາດລົງທະບຽນໄດ້");
+          // Register API call
+          const response = await fetch("/api/auth/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password, displayName, role })
+          });
+          const data = await response.json();
+          if (data.success) {
+            setSuccessMsg("ລົງທະບຽນສຳເລັດແລ້ວ! ກະລຸນາເຂົ້າສູ່ລະບົບ");
+            setIsLogin(true);
+            setPassword(""); // Reset password but keep username for instant login convenience
+          } else {
+            setError(data.error || "ບໍ່ສາມາດລົງທະບຽນໄດ້");
+          }
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Auth error:", err);
-      // Fallback local mock client side authentication if server hasn't built yet
-      if (isLogin) {
+      
+      // Friendly error message mapping
+      let friendlyError = err.message || "ເກີດຂໍ້ຜິດພາດໃນການເຂົ້າສູ່ລະບົບ";
+      if (err.code === "auth/user-not-found" || err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
+        friendlyError = "ອີເມວ ຫຼື ລະຫັດຜ່ານບໍ່ຖືກຕ້ອງ";
+      } else if (err.code === "auth/email-already-in-use") {
+        friendlyError = "ອີເມວນີ້ໄດ້ຖືກລົງທະບຽນໃນລະບົບແລ້ວ";
+      } else if (err.code === "auth/weak-password") {
+        friendlyError = "ລະຫັດຜ່ານຕ້ອງມີຢ່າງໜ້ອຍ 6 ຕົວອັກສອນ";
+      } else if (err.code === "auth/invalid-email") {
+        friendlyError = "ຮູບແບບອີເມວບໍ່ຖືກຕ້ອງ";
+      }
+      
+      // Fallback local mock client side authentication if not an email address
+      if (!username.includes("@") && isLogin) {
         if (username === "admin" && password === "password") {
           onLoginSuccess({
             id: "user-1",
@@ -113,6 +169,7 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
             displayName: "Latsamy Phanthaboun",
             role: "Senior QA Auditor"
           });
+          return;
         } else if (username === "auditor123" && password === "tplus123") {
           onLoginSuccess({
             id: "user-2",
@@ -120,13 +177,11 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
             displayName: "TPLUS Staff",
             role: "QA Associate"
           });
-        } else {
-          setError("ຊື່ຜູ້ໃຊ້ ຫຼື ລະຫັດຜ່ານບໍ່ຖືກຕ້ອງ (ໂຫມດ Fallback)");
+          return;
         }
-      } else {
-        setSuccessMsg("ລົງທະບຽນສຳເລັດແລ້ວໃນໂຫມດ Fallback! ກະລຸນາເຂົ້າສູ່ລະບົບ");
-        setIsLogin(true);
       }
+      
+      setError(friendlyError);
     } finally {
       setIsLoading(false);
     }
@@ -197,8 +252,51 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
         </div>
 
         {/* Alerts & Feedback */}
-        {error && (
-          <div id="auth-error-alert" className="mb-4 p-3.5 bg-red-950/30 border border-red-900/40 rounded-xl flex items-start gap-2.5 animate-pulse">
+        {error && error === "popup-closed-by-user" ? (
+          <div id="auth-iframe-error-alert" className="mb-5 p-4 bg-red-950/20 border border-red-900/50 rounded-2xl space-y-3">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5 animate-pulse" />
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold text-red-200 uppercase tracking-wider">
+                  ປັອບອັບຖືກປິດ ຫຼື ຖືກບລັອກ (Popup Blocked / Closed)
+                </h4>
+                <p className="text-[10px] text-red-300/90 leading-relaxed font-medium">
+                  ລະບົບປັອບອັບ Google Sign-In ຖືກບລັອກໂດຍຄວາມປອດໄພຂອງ iFrame ຫຼື ຖືກປິດໂດຍຜູ້ໃຊ້. ກະລຸນາເລືອກແກ້ໄຂດ້ວຍ 2 ວິທີງ່າຍໆດັ່ງນີ້:
+                </p>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <a
+                id="auth-error-btn-newtab"
+                href={window.location.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1 bg-red-900/60 hover:bg-red-800/80 border border-red-700 text-white font-extrabold py-2 px-3 rounded-xl text-[10px] transition duration-300 cursor-pointer text-center"
+              >
+                <span>ເປີດແທັບໃໝ່ 🌐</span>
+              </a>
+              <button
+                id="auth-error-btn-guest"
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  onLoginSuccess({
+                    id: "guest-" + Date.now(),
+                    username: "guest_visitor",
+                    displayName: "ຜູ້ຢ້ຽມຊົມ (Guest Visitor)",
+                    role: "Guest QA Auditor"
+                  });
+                }}
+                className="flex items-center justify-center gap-1 bg-zinc-950 hover:bg-zinc-900 border border-zinc-850 hover:border-red-900/45 text-red-400 hover:text-white font-extrabold py-2 px-3 rounded-xl text-[10px] transition duration-300 cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                <span>ເຂົ້າໂຫມດທົດລອງ 🚀</span>
+              </button>
+            </div>
+          </div>
+        ) : error && (
+          <div id="auth-error-alert" className="mb-4 p-3.5 bg-red-950/30 border border-red-900/40 rounded-xl flex items-start gap-2.5">
             <AlertCircle className="w-4.5 h-4.5 text-red-500 shrink-0 mt-0.5" />
             <span className="text-[11px] text-red-300 leading-normal font-medium">{error}</span>
           </div>
@@ -240,7 +338,7 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
           {/* Username Input */}
           <div className="space-y-1.5">
             <label htmlFor="auth-input-username" className="text-[11px] font-bold text-zinc-400 block uppercase tracking-wider">
-              ຊື່ຜູ້ໃຊ້ (Username) <span className="text-red-500">*</span>
+              ຈີເມວ ຫຼື ຊື່ຜູ້ໃຊ້ (Gmail / Username) <span className="text-red-500">*</span>
             </label>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-zinc-500 pointer-events-none">
@@ -251,7 +349,7 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
                 type="text"
                 required
                 autoComplete="username"
-                placeholder="ຕົວຢ່າງ: admin, auditor123"
+                placeholder="ຕົວຢ່າງ: you@gmail.com, admin, auditor123"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full bg-zinc-950/80 border border-zinc-900 rounded-xl py-3 pl-11 pr-4 text-xs text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-red-600/50 focus:border-red-600 transition"
@@ -330,9 +428,48 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
             )}
           </button>
 
+          {/* Guest Trial Access Button */}
+          {isLogin && (
+            <button
+              id="auth-btn-guest"
+              type="button"
+              disabled={isLoading}
+              onClick={() => {
+                onLoginSuccess({
+                  id: "guest-" + Date.now(),
+                  username: "guest_visitor",
+                  displayName: "ຜູ້ຢ້ຽມຊົມ (Guest Visitor)",
+                  role: "Guest QA Auditor"
+                });
+              }}
+              className="w-full bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-red-900/45 text-red-400 hover:text-white py-3 rounded-xl text-xs font-bold shadow-md flex items-center justify-center gap-2 transition active:scale-[0.98] cursor-pointer mt-2.5"
+            >
+              <Sparkles className="w-4 h-4 text-red-500 animate-pulse" />
+              <span>ເຂົ້າໃຊ້ງານແບບທົດລອງທັນທີ (Instant Guest Access)</span>
+            </button>
+          )}
+
           {/* Divider */}
           {isLogin && (
             <>
+              {isInIframe && (
+                <div id="auth-iframe-warning" className="bg-red-950/20 border border-red-900/30 rounded-xl p-3 text-center space-y-2 mt-4">
+                  <div className="text-[10px] text-red-300 font-bold leading-relaxed">
+                    ⚠️ ພົບວ່າທ່ານກຳລັງໃຊ້ງານຜ່ານ iFrame: ປັອບອັບ Google Sign-In ອາດຈະຖືກບລັອກ. ຖ້າເຂົ້າສູ່ລະບົບບໍ່ໄດ້ ກະລຸນາຄລິກເປີດໃນແທັບໃໝ່.
+                  </div>
+                  <a
+                    id="auth-btn-new-tab"
+                    href={window.location.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-1.5 bg-red-900/40 hover:bg-red-800/50 border border-red-700/50 text-white font-bold py-1.5 px-4 rounded-lg text-[10px] transition duration-300 cursor-pointer"
+                  >
+                    <span>ເປີດໃນແທັບໃໝ່ (Open in New Tab)</span>
+                    <ArrowRight className="w-3 h-3 text-red-400" />
+                  </a>
+                </div>
+              )}
+
               <div className="relative my-4 flex items-center justify-center">
                 <div className="absolute inset-x-0 h-[1px] bg-zinc-900" />
                 <span className="relative bg-[#0d0d11] px-3 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
@@ -354,7 +491,7 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
                   <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
                   <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
                 </svg>
-                <span>ເຂົ້າສູ່ລະບົບດ້ວຍ Google</span>
+                <span>ເຂົ້າສູ່ລະບົບດ້ວຍ Gmail / Google</span>
               </button>
             </>
           )}

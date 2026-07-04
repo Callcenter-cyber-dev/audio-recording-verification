@@ -10,7 +10,8 @@ import {
   CheckCircle, 
   Activity,
   LogOut,
-  UserCheck
+  UserCheck,
+  Mic
 } from "lucide-react";
 
 interface SidebarProps {
@@ -31,6 +32,7 @@ export default function Sidebar({ activeTab, setActiveTab, stats, currentUser, o
     { id: "dashboard" as SidebarTab, label: "ແຜງຄວບຄຸມ (Dashboard)", icon: LayoutDashboard },
     { id: "records" as SidebarTab, label: "ລາຍການກວດສອບ (Records)", icon: ListMusic },
     { id: "verify" as SidebarTab, label: "ກວດສອບສຽງໃໝ່ (Verify Audio)", icon: FileAudio },
+    { id: "meeting" as SidebarTab, label: "ບັນທຶກສຽງກອງປະຊຸມ (Meeting)", icon: Mic },
     { id: "settings" as SidebarTab, label: "ຕັ້ງຄ່າ & ຂໍ້ມູນ (Settings)", icon: Settings },
   ];
 

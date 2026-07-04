@@ -23,4 +23,16 @@ export interface User {
   role: string;
 }
 
-export type SidebarTab = "dashboard" | "records" | "verify" | "settings";
+export interface MeetingRecord {
+  id: string;
+  topic: string;
+  laoTranscript: string;
+  englishTranscript: string;
+  summary: string;
+  createdAt: string;
+  duration: number; // in seconds
+  audioBase64?: string;
+  isFallback?: boolean;
+}
+
+export type SidebarTab = "dashboard" | "records" | "verify" | "meeting" | "settings";
